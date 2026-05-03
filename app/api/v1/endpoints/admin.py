@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func, update, delete
 from datetime import datetime, timedelta, timezone
 import re
 import unicodedata
@@ -9,7 +9,8 @@ from app.core.database import get_db
 from app.core.security import get_current_admin
 from app.models.models import (
     User, Commerce, Merchant, Subscription, Category, Event,
-    Advertisement, SupportTicket, CommerceStatus, SubscriptionStatus
+    Advertisement, SupportTicket, CommerceStatus, SubscriptionStatus,
+    Favorite, Review, StorePhoto, PromotionalOffer, Survey
 )
 from app.schemas.schemas import AdminCommerceCreate, AdminCommerceImportRequest, CommerceCreate
 
@@ -380,6 +381,59 @@ async def import_admin_commerces(
         "created": created,
         "skipped": skipped,
         "errors": errors,
+    }
+
+
+@router.post("/commerces/clear-mine")
+async def clear_my_admin_commerces(
+    db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    merchant_result = await db.execute(
+        select(Merchant).where(Merchant.user_id == current_admin.id)
+    )
+    merchant = merchant_result.scalar_one_or_none()
+    if not merchant:
+        return {
+            "deleted_count": 0,
+            "message": "Aucun commerce admin à supprimer",
+        }
+
+    commerce_ids = (
+        await db.execute(
+            select(Commerce.id).where(Commerce.merchant_id == merchant.id)
+        )
+    ).scalars().all()
+
+    if not commerce_ids:
+        return {
+            "deleted_count": 0,
+            "message": "Aucun commerce admin à supprimer",
+        }
+
+    await db.execute(delete(Favorite).where(Favorite.commerce_id.in_(commerce_ids)))
+    await db.execute(delete(Review).where(Review.commerce_id.in_(commerce_ids)))
+    await db.execute(delete(StorePhoto).where(StorePhoto.commerce_id.in_(commerce_ids)))
+    await db.execute(delete(PromotionalOffer).where(PromotionalOffer.commerce_id.in_(commerce_ids)))
+    await db.execute(
+        update(Advertisement)
+        .where(Advertisement.commerce_id.in_(commerce_ids))
+        .values(commerce_id=None)
+    )
+    await db.execute(
+        update(Survey)
+        .where(Survey.commerce_id.in_(commerce_ids))
+        .values(commerce_id=None)
+    )
+    deleted_result = await db.execute(
+        delete(Commerce).where(Commerce.id.in_(commerce_ids))
+    )
+    await db.commit()
+
+    deleted_count = deleted_result.rowcount or len(commerce_ids)
+    return {
+        "deleted_count": deleted_count,
+        "message": f"{deleted_count} commerce(s) supprimé(s)",
     }
 
 
