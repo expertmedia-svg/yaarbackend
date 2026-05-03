@@ -18,6 +18,11 @@ LOCAL_ADMIN_PHONE = "+22600000000"
 LOCAL_ADMIN_NAME = "Admin YAAR+"
 
 
+def _build_default_full_name(phone: str) -> str:
+    suffix = phone[-4:] if len(phone) >= 4 else phone
+    return f"Utilisateur {suffix}"
+
+
 def _build_token_response(user: User) -> TokenResponse:
     access_token = create_access_token({"sub": user.id})
     refresh_token = create_refresh_token({"sub": user.id})
@@ -137,9 +142,27 @@ async def verify_otp(data: OTPVerifyRequest, db: AsyncSession = Depends(get_db))
 
 @router.post("/login", response_model=TokenResponse)
 async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
-    user = await UserService.verify_pin(db, data.phone, data.pin)
+    user = await UserService.get_by_phone(db, data.phone)
+
     if not user:
-        raise HTTPException(status_code=400, detail="Numéro ou code PIN invalide")
+        if not settings.AUTH_SKIP_OTP:
+            raise HTTPException(status_code=400, detail="Numéro ou code PIN invalide")
+
+        user = await UserService.create_user(
+            db,
+            data.phone,
+            _build_default_full_name(data.phone),
+        )
+        user = await UserService.set_pin(db, user.id, data.pin)
+    elif not user.password_hash:
+        if not settings.AUTH_SKIP_OTP:
+            raise HTTPException(status_code=400, detail="Numéro ou code PIN invalide")
+
+        user = await UserService.set_pin(db, user.id, data.pin)
+    else:
+        user = await UserService.verify_pin(db, data.phone, data.pin)
+        if not user:
+            raise HTTPException(status_code=400, detail="Numéro ou code PIN invalide")
 
     user = await _ensure_local_admin(db, user)
 
