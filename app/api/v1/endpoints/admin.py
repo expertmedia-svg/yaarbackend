@@ -16,14 +16,6 @@ from app.schemas.schemas import AdminCommerceCreate, AdminCommerceImportRequest,
 router = APIRouter()
 
 
-CITY_COORDINATES = {
-    "ouagadougou": (12.3714, -1.5197),
-    "bobo-dioulasso": (11.1771, -4.2979),
-    "koudougou": (12.2526, -2.3627),
-    "ouahigouya": (13.5828, -2.4216),
-}
-
-
 def _normalize_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", (value or "").strip()).casefold()
 
@@ -71,12 +63,14 @@ def _sanitize_import_payload(item):
     }
 
 
-def _resolve_coordinates(city: str, latitude: float | None, longitude: float | None) -> tuple[float, float, bool]:
-    if latitude is not None and longitude is not None:
-        return latitude, longitude, False
+def _require_coordinates(latitude: float | None, longitude: float | None) -> tuple[float, float]:
+    if latitude is None or longitude is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Coordonnées GPS manquantes. Importez un fichier avec latitude et longitude réelles.",
+        )
 
-    coords = CITY_COORDINATES.get(_normalize_text(city)) or CITY_COORDINATES["ouagadougou"]
-    return coords[0], coords[1], True
+    return latitude, longitude
 
 
 async def _get_or_create_admin_merchant(db: AsyncSession, user: User) -> Merchant:
@@ -269,7 +263,7 @@ async def create_admin_commerce(
         raise HTTPException(status_code=409, detail="Un commerce similaire existe déjà")
 
     merchant = await _get_or_create_admin_merchant(db, current_admin)
-    latitude, longitude, used_fallback = _resolve_coordinates(sanitized["city"], payload.latitude, payload.longitude)
+    latitude, longitude = _require_coordinates(payload.latitude, payload.longitude)
 
     commerce = await CommerceService.create_commerce(
         db,
@@ -298,7 +292,7 @@ async def create_admin_commerce(
         "name": commerce.name,
         "status": commerce.status.value,
         "city": commerce.city,
-        "used_fallback_coordinates": used_fallback,
+        "used_fallback_coordinates": False,
         "message": "Commerce créé avec succès",
     }
 
@@ -335,7 +329,7 @@ async def import_admin_commerces(
                     })
                     continue
 
-                latitude, longitude, used_fallback = _resolve_coordinates(sanitized["city"], item.latitude, item.longitude)
+                latitude, longitude = _require_coordinates(item.latitude, item.longitude)
                 commerce = await CommerceService.create_commerce(
                     db,
                     merchant.id,
@@ -362,7 +356,7 @@ async def import_admin_commerces(
                     "id": commerce.id,
                     "name": commerce.name,
                     "status": commerce.status.value,
-                    "used_fallback_coordinates": used_fallback,
+                    "used_fallback_coordinates": False,
                 })
         except HTTPException as exc:
             errors.append({
