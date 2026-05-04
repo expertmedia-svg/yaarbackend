@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.services.commerce_service import CommerceService
+from app.services.google_routes_service import GoogleRoutesService
 from app.schemas.schemas import NearbySearchRequest, SearchResponse
 
 router = APIRouter()
@@ -75,3 +76,39 @@ async def autocomplete(
         {"id": r.id, "name": r.name, "city": r.city, "quartier": r.quartier}
         for r in rows
     ]
+
+
+@router.get("/route-metrics")
+async def route_metrics(
+    origin_lat: float = Query(..., description="Latitude du point de départ"),
+    origin_lng: float = Query(..., description="Longitude du point de départ"),
+    destination_lat: float = Query(..., description="Latitude de destination"),
+    destination_lng: float = Query(..., description="Longitude de destination"),
+    current_user=Depends(get_current_user),
+):
+    if not (current_user.is_premium or current_user.is_admin):
+        raise HTTPException(
+            status_code=403,
+            detail="Navigation premium requise pour calculer l'itineraire.",
+        )
+
+    try:
+        distance_meters, duration_minutes = await GoogleRoutesService.compute_driving_metrics(
+            origin_lat=origin_lat,
+            origin_lng=origin_lng,
+            destination_lat=destination_lat,
+            destination_lng=destination_lng,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Le calcul d'itineraire Google est indisponible pour le moment.",
+        ) from exc
+
+    return {
+        "distance_meters": distance_meters,
+        "distance_km": round(distance_meters / 1000, 2),
+        "duration_minutes": duration_minutes,
+    }

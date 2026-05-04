@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     # Geolocation
     MAX_SEARCH_RADIUS_KM: float = 50.0
     DEFAULT_SEARCH_RADIUS_KM: float = 5.0
+    GOOGLE_MAPS_API_KEY: Optional[str] = None
+    GOOGLE_ROUTES_TIMEOUT_SECONDS: int = 10
 
     @field_validator("DEBUG", mode="before")
     @classmethod
