@@ -200,6 +200,7 @@ async def list_commerces(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     search: str | None = Query(None),
+    category_slug: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_admin),
 ):
@@ -217,6 +218,9 @@ async def list_commerces(
             | Commerce.city.ilike(pattern)
             | Commerce.quartier.ilike(pattern)
         )
+
+    if category_slug:
+        query = query.where(Category.slug == category_slug.strip())
 
     total = (
         await db.execute(select(func.count()).select_from(query.subquery()))
@@ -236,6 +240,7 @@ async def list_commerces(
                 "phone": commerce.phone,
                 "status": commerce.status.value if commerce.status else None,
                 "category_name": category.name if category else "Non classé",
+                "category_slug": category.slug if category else None,
                 "category_emoji": category.icon if category and category.icon else "🏪",
                 "created_at": commerce.created_at,
             }

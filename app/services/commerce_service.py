@@ -195,9 +195,9 @@ class CommerceService:
             d["latitude"] = commerce.latitude
             d["longitude"] = commerce.longitude
             d["opening_hours"] = commerce.opening_hours
-            if is_premium:
-                d["phone"] = commerce.phone
-                d["whatsapp"] = commerce.whatsapp
+            # Public business contacts are part of proximity discovery.
+            d["phone"] = commerce.phone
+            d["whatsapp"] = commerce.whatsapp
             result_list.append(d)
 
         return result_list, total

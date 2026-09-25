@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.rate_limit import limiter
 from app.services.ai_service import build_search_text, interpret_query
 from app.services.commerce_service import CommerceService
 from app.schemas.schemas import AISearchRequest, NearbySearchRequest
@@ -76,10 +76,11 @@ def _build_follow_up_suggestions(interpretation: dict, results: list) -> list[st
 
 
 @router.post("/search")
+@limiter.limit("10/minute")
 async def ai_search(
+    request: Request,
     data: AISearchRequest,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
 ):
     """
     Natural language AI-powered search.
@@ -115,7 +116,7 @@ async def ai_search(
             limit=10,
         )
         results, _ = await CommerceService.search_nearby(
-            db, req, is_premium=current_user.is_premium or current_user.is_admin
+            db, req
         )
 
         if not results and category_slug:
@@ -131,7 +132,6 @@ async def ai_search(
             results, _ = await CommerceService.search_nearby(
                 db,
                 relaxed_req,
-                is_premium=current_user.is_premium or current_user.is_admin,
             )
 
     ai_message = _build_ai_message(interpretation, results)
@@ -153,7 +153,6 @@ async def get_suggestions(
     latitude: float,
     longitude: float,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
 ):
     """Get personalized AI recommendations based on location and time"""
     from datetime import datetime

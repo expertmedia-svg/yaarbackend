@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.rate_limit import limiter
 from app.services.commerce_service import CommerceService
 from app.services.google_routes_service import GoogleRoutesService
 from app.schemas.schemas import NearbySearchRequest, SearchResponse
@@ -12,7 +12,9 @@ router = APIRouter()
 
 
 @router.get("/nearby")
+@limiter.limit("60/minute")
 async def search_nearby(
+    request: Request,
     latitude: float = Query(..., description="Latitude GPS"),
     longitude: float = Query(..., description="Longitude GPS"),
     radius_km: float = Query(5.0, ge=0.1, le=50.0),
@@ -22,7 +24,6 @@ async def search_nearby(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
 ):
     req = NearbySearchRequest(
         latitude=latitude,
@@ -36,7 +37,7 @@ async def search_nearby(
     )
 
     results, total = await CommerceService.search_nearby(
-        db, req, is_premium=current_user.is_premium or current_user.is_admin
+        db, req
     )
 
     return {
@@ -45,15 +46,15 @@ async def search_nearby(
         "page": page,
         "limit": limit,
         "has_more": (page * limit) < total,
-        "user_is_premium": current_user.is_premium,
     }
 
 
 @router.get("/autocomplete")
+@limiter.limit("60/minute")
 async def autocomplete(
+    request: Request,
     q: str = Query(..., min_length=2),
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
 ):
     """Quick autocomplete for search bar"""
     from app.models.models import Commerce, CommerceStatus
@@ -79,19 +80,14 @@ async def autocomplete(
 
 
 @router.get("/route-metrics")
+@limiter.limit("20/minute")
 async def route_metrics(
+    request: Request,
     origin_lat: float = Query(..., description="Latitude du point de départ"),
     origin_lng: float = Query(..., description="Longitude du point de départ"),
     destination_lat: float = Query(..., description="Latitude de destination"),
     destination_lng: float = Query(..., description="Longitude de destination"),
-    current_user=Depends(get_current_user),
 ):
-    if not (current_user.is_premium or current_user.is_admin):
-        raise HTTPException(
-            status_code=403,
-            detail="Navigation premium requise pour calculer l'itineraire.",
-        )
-
     try:
         distance_meters, duration_minutes = await GoogleRoutesService.compute_driving_metrics(
             origin_lat=origin_lat,

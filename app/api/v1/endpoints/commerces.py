@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.rate_limit import limiter
 from app.core.security import get_current_user, get_premium_user
 from app.services.commerce_service import CommerceService
 from app.schemas.schemas import CommerceCreate, CommerceUpdate, ReviewCreate, ReviewResponse
@@ -10,6 +11,24 @@ from app.models.models import Merchant, Review, Commerce, CommerceStatus
 from sqlalchemy import select
 
 router = APIRouter()
+
+
+@router.post("/{commerce_id}/click-call", status_code=204)
+@limiter.limit("20/minute")
+async def track_call(
+    request: Request,
+    commerce_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import update
+
+    result = await db.execute(
+        update(Commerce)
+        .where(Commerce.id == commerce_id, Commerce.status == CommerceStatus.ACTIVE)
+        .values(click_call_count=Commerce.click_call_count + 1)
+    )
+    if not result.rowcount:
+        raise HTTPException(status_code=404, detail="Commerce introuvable")
 
 
 @router.post("/", status_code=201)
@@ -39,7 +58,6 @@ async def create_commerce(
 async def get_commerce(
     commerce_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
 ):
     commerce = await CommerceService.get_by_id(db, commerce_id)
     if not commerce or commerce.status != CommerceStatus.ACTIVE:
