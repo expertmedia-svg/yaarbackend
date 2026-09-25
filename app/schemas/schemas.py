@@ -269,6 +269,7 @@ class NearbySearchRequest(BaseModel):
     latitude: float
     longitude: float
     radius_km: float = 5.0
+    search_all: bool = False
     category_slug: Optional[str] = None
     query: Optional[str] = None
     open_now: Optional[bool] = None

@@ -107,11 +107,15 @@ class CommerceService:
             select(Commerce)
             .where(
                 Commerce.status == CommerceStatus.ACTIVE,
-                Commerce.latitude.between(min_lat, max_lat),
-                Commerce.longitude.between(min_lon, max_lon),
             )
             .options(selectinload(Commerce.category))
         )
+
+        if not req.search_all:
+            query = query.where(
+                Commerce.latitude.between(min_lat, max_lat),
+                Commerce.longitude.between(min_lon, max_lon),
+            )
 
         if req.category_slug:
             cat_result = await db.execute(
@@ -120,12 +124,14 @@ class CommerceService:
             cat = cat_result.scalar_one_or_none()
             if cat:
                 query = query.where(Commerce.category_id == cat.id)
+            else:
+                return [], 0
 
         if req.open_now:
             query = query.where(Commerce.is_open_now == True)
 
-        # Over-fetch because query text and distance are finalized in Python.
-        query = query.limit(max(req.limit * 20, 200))
+        # Do not truncate candidates before distance/text filtering. Otherwise
+        # later pages and matching shops disappear from the advertised total.
         result = await db.execute(query)
         commerces = result.scalars().all()
 
@@ -135,7 +141,7 @@ class CommerceService:
         query_terms = split_search_terms(req.query)
         for c in commerces:
             dist = haversine_distance(req.latitude, req.longitude, c.latitude, c.longitude)
-            if dist > req.radius_km:
+            if not req.search_all and dist > req.radius_km:
                 continue
 
             if normalized_query:
@@ -161,7 +167,8 @@ class CommerceService:
 
             items.append((c, dist))
 
-        items.sort(key=lambda x: x[1])
+        # Stable order across pages, including shops at identical coordinates.
+        items.sort(key=lambda x: (x[1], x[0].id))
         total = len(items)
         start = (req.page - 1) * req.limit
         end = start + req.limit
