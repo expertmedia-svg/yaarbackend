@@ -16,7 +16,7 @@ from app.api.v1.endpoints import search, commerces, ai_assistant
 
 
 @pytest.fixture
-def client():
+def client(request):
     engine = create_async_engine('sqlite+aiosqlite:///:memory:')
     sessions = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -36,6 +36,20 @@ def client():
                     name=f'Boutique {status.value}', slug=f'boutique-{status.value}',
                     latitude=12.3714, longitude=-1.5197, status=status,
                     phone='+22670000001', whatsapp='+22670000001',
+                ))
+            fixture_options = getattr(request, 'param', {})
+            for index in range(fixture_options.get('nearby', 0)):
+                db.add(Commerce(
+                    id=f'nearby-{index:04d}', merchant_id='merchant', category_id='category',
+                    name='Boutique tardive' if index == 528 else f'Boutique {index}',
+                    slug=f'nearby-{index}', latitude=12.3714, longitude=-1.5197,
+                    status=CommerceStatus.ACTIVE,
+                ))
+            for index in range(fixture_options.get('far', 0)):
+                db.add(Commerce(
+                    id=f'far-{index}', merchant_id='merchant', category_id='category',
+                    name='Boutique Bobo', slug=f'far-{index}',
+                    latitude=11.18, longitude=-4.28, status=CommerceStatus.ACTIVE,
                 ))
             await db.commit()
         yield
@@ -114,3 +128,39 @@ def test_public_search_is_rate_limited(client):
     for _ in range(60):
         assert client.get('/search/autocomplete', params={'q': 'Boutique'}).status_code == 200
     assert client.get('/search/autocomplete', params={'q': 'Boutique'}).status_code == 429
+
+
+@pytest.mark.parametrize('client', [{'nearby': 229}, {'nearby': 529}], indirect=True)
+def test_every_active_shop_is_reachable_across_pages(client, request):
+    expected = request.node.callspec.params['client']['nearby'] + 1
+    ids = []
+    for page in range(1, (expected + 19) // 20 + 1):
+        response = client.get('/search/nearby', params={
+            'latitude': 12.3714, 'longitude': -1.5197, 'limit': 20, 'page': page,
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data['total'] == expected
+        ids.extend(item['id'] for item in data['results'])
+        assert data['has_more'] == (page * 20 < expected)
+    assert len(ids) == len(set(ids)) == expected
+
+
+@pytest.mark.parametrize('client', [{'nearby': 529}], indirect=True)
+def test_text_filter_can_find_shop_beyond_old_candidate_cap(client):
+    response = client.get('/search/nearby', params={
+        'latitude': 12.3714, 'longitude': -1.5197, 'query': 'tardive', 'limit': 20,
+    })
+    assert response.status_code == 200
+    assert response.json()['total'] == 1
+    assert response.json()['results'][0]['id'] == 'nearby-0528'
+
+
+@pytest.mark.parametrize('client', [{'nearby': 229, 'far': 1}], indirect=True)
+def test_all_scope_includes_other_cities_but_keeps_active_filter(client):
+    params = {'latitude': 12.3714, 'longitude': -1.5197, 'radius_km': 25}
+    assert client.get('/search/nearby', params=params).json()['total'] == 230
+    params['search_all'] = True
+    assert client.get('/search/nearby', params=params).json()['total'] == 231
+    params['category_slug'] = 'unknown-category'
+    assert client.get('/search/nearby', params=params).json()['total'] == 0
