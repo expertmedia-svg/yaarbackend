@@ -52,6 +52,12 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(api_router, prefix="/api/v1")
 
+# Static files for uploaded images
+from fastapi.staticfiles import StaticFiles
+import os
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+
 
 @app.get("/health")
 async def health_check():

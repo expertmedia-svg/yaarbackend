@@ -430,8 +430,9 @@ class SurveyCreate(BaseModel):
     category_id: str
     subcategory_id: Optional[str] = None
     phone: Optional[str] = None
+    whatsapp: Optional[str] = None
     address: Optional[str] = None
-    city: str
+    city: Optional[str] = "Ouagadougou"
     quartier: Optional[str] = None
     latitude: float
     longitude: float
@@ -441,6 +442,7 @@ class SurveyCreate(BaseModel):
     availability: Optional[str] = None
     services: List[str] = []
     tags: List[str] = []
+    cover_photo: Optional[str] = None
     photos: List[SurveyPhotoCreate] = []
 
 
@@ -615,3 +617,64 @@ class AuditLogResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ── Product Schemas ────────────────────────────────────────────────────────────
+
+class ProductCreate(BaseModel):
+    commerce_id: str
+    name: str
+    description: Optional[str] = None
+    price_fcfa: int
+    category: Optional[str] = None
+    condition: Optional[str] = "Neuf"
+    unit: Optional[str] = "Pièce"
+    stock: Optional[int] = 1
+    cover_photo: Optional[str] = None
+    photos: List[str] = []
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    is_same_location_as_commerce: bool = True
+    status: Optional[str] = "en_ligne"
+
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price_fcfa: Optional[int] = None
+    category: Optional[str] = None
+    condition: Optional[str] = None
+    unit: Optional[str] = None
+    stock: Optional[int] = None
+    cover_photo: Optional[str] = None
+    photos: Optional[List[str]] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    is_same_location_as_commerce: Optional[bool] = None
+    status: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class ProductResponse(BaseModel):
+    id: str
+    commerce_id: str
+    commerce_name: Optional[str] = None
+    name: str
+    description: Optional[str] = None
+    price_fcfa: int
+    category: Optional[str] = None
+    condition: str = "Neuf"
+    unit: str = "Pièce"
+    stock: int = 1
+    cover_photo: Optional[str] = None
+    photos: List[str] = []
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    is_same_location_as_commerce: bool = True
+    status: str = "en_ligne"
+    is_active: bool = True
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+

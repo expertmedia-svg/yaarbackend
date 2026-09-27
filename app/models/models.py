@@ -179,6 +179,7 @@ class Commerce(Base):
     category = relationship("Category", back_populates="commerces")
     reviews = relationship("Review", back_populates="commerce")
     favorites = relationship("Favorite", back_populates="commerce")
+    products = relationship("Product", back_populates="commerce", cascade="all, delete-orphan")
 
 
 # ── Subscriptions ──────────────────────────────────────────────────────────────
@@ -494,3 +495,33 @@ class AuditLog(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     admin = relationship("User")
+
+
+# ── Marketplace Products ───────────────────────────────────────────────────────
+
+class Product(Base):
+    __tablename__ = "products"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    commerce_id = Column(String, ForeignKey("commerces.id"), nullable=False, index=True)
+    name = Column(String(200), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    price_fcfa = Column(Integer, nullable=False)
+    category = Column(String(100), nullable=True, index=True)
+    condition = Column(String(50), default="Neuf")  # Neuf, Occasion
+    unit = Column(String(50), default="Pièce")      # Pièce, Kg, Litre, Sac, Carton, Lot, etc.
+    stock = Column(Integer, default=1)
+    cover_photo = Column(String, nullable=True)
+    photos = Column(JSON, default=list)            # List of photo URLs
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    is_same_location_as_commerce = Column(Boolean, default=True)
+    status = Column(String(50), default="en_ligne")  # en_ligne, en_attente, desactive
+    is_active = Column(Boolean, default=True)
+    created_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    commerce = relationship("Commerce", back_populates="products")
+    creator = relationship("User")
+
