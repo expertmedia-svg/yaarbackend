@@ -155,27 +155,32 @@ class CommerceService:
                     c.category.slug if c.category else "",
                 ])
                 normalized_blob = normalize_search_text(search_blob)
-                if normalized_query not in normalized_blob:
+                score = 0
+                if normalized_query in normalized_blob:
+                    score = 10
+                else:
                     matched_terms = [term for term in query_terms if term in normalized_blob]
-                    if req.category_slug:
-                        if not matched_terms:
-                            continue
-                    else:
-                        minimum_matches = 1 if len(query_terms) <= 1 else 2
-                        if len(matched_terms) < minimum_matches:
-                            continue
+                    if not matched_terms:
+                        continue
+                    score = len(matched_terms)
+            else:
+                score = 0
 
-            items.append((c, dist))
+            items.append((c, dist, score))
 
-        # Stable order across pages, including shops at identical coordinates.
-        items.sort(key=lambda x: (x[1], x[0].id))
+        # Order by relevance score (descending) when searching by text, then by distance
+        if normalized_query:
+            items.sort(key=lambda x: (-x[2], x[1], x[0].id))
+        else:
+            items.sort(key=lambda x: (x[1], x[0].id))
+
         total = len(items)
         start = (req.page - 1) * req.limit
         end = start + req.limit
         items = items[start:end]
 
         result_list = []
-        for commerce, dist in items:
+        for commerce, dist, _score in items:
             d = {
                 "id": commerce.id,
                 "name": commerce.name,
