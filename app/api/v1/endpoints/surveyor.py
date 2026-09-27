@@ -238,13 +238,32 @@ async def create_survey(
     photo_urls = [p.photo_url for p in data.photos]
     cover_photo = data.cover_photo or (photo_urls[0] if photo_urls else None)
 
+    # 2.5 Resilient Category resolution
+    real_cat_id = data.category_id
+    cat_res = await db.execute(select(Category).where(Category.id == data.category_id))
+    cat = cat_res.scalar_one_or_none()
+    if not cat:
+        search_term = (data.category_id or "").strip()
+        cat_by_name = await db.execute(
+            select(Category).where(
+                Category.name.ilike(f"%{search_term}%") | Category.slug.ilike(f"%{search_term}%")
+            )
+        )
+        matched_cat = cat_by_name.scalar_one_or_none()
+        if matched_cat:
+            real_cat_id = matched_cat.id
+        else:
+            first_cat = (await db.execute(select(Category).limit(1))).scalar_one_or_none()
+            if first_cat:
+                real_cat_id = first_cat.id
+
     # 3. Create active Commerce
     slug_base = _slugify(data.store_name)
     slug = f"{slug_base}-{uuid.uuid4().hex[:6]}"
 
     commerce = Commerce(
         merchant_id=merchant.id,
-        category_id=data.category_id,
+        category_id=real_cat_id,
         name=data.store_name,
         slug=slug,
         description=data.description or f"Commerce recensé à {data.city or 'Ouagadougou'}",
@@ -415,9 +434,28 @@ async def batch_sync_surveys(
         photo_urls = [p.photo_url for p in survey_data.photos]
         cover_photo = survey_data.cover_photo or (photo_urls[0] if photo_urls else None)
 
+        # Resilient category resolution
+        real_cat_id = survey_data.category_id
+        cat_res = await db.execute(select(Category).where(Category.id == survey_data.category_id))
+        cat = cat_res.scalar_one_or_none()
+        if not cat:
+            search_term = (survey_data.category_id or "").strip()
+            cat_by_name = await db.execute(
+                select(Category).where(
+                    Category.name.ilike(f"%{search_term}%") | Category.slug.ilike(f"%{search_term}%")
+                )
+            )
+            matched_cat = cat_by_name.scalar_one_or_none()
+            if matched_cat:
+                real_cat_id = matched_cat.id
+            else:
+                first_cat = (await db.execute(select(Category).limit(1))).scalar_one_or_none()
+                if first_cat:
+                    real_cat_id = first_cat.id
+
         commerce = Commerce(
             merchant_id=merchant.id,
-            category_id=survey_data.category_id,
+            category_id=real_cat_id,
             name=survey_data.store_name,
             slug=f"{_slugify(survey_data.store_name)}-{uuid.uuid4().hex[:6]}",
             description=survey_data.description,
